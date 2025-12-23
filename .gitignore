@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+frontend/build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+monitoring-data/
+webrtc_data/
+webrtc_output/
+*.log
+
+# Secrets
+.env
+*.pem
+*.key
+
+# Ansible
+*.retry
+
+# Android
+*.apk
+*.ap_
+*.dex
+*.class
+.gradle/
+local.properties
+.idea/
+*.iml
+*.hprof
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Terminals
+terminals/
+

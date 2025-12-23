@@ -1,0 +1,51 @@
+---
+- name: Deploy Frontend Only
+  hosts: webrtc-server
+  become: yes
+  vars:
+    docker_compose_dir: /root/monitoring-system
+    
+  tasks:
+    - name: Check if frontend build exists locally
+      local_action:
+        module: stat
+        path: ../frontend/build/index.html
+      register: frontend_build
+      become: no
+    
+    - name: Fail if frontend not built
+      fail:
+        msg: "Frontend build not found! Run 'npm run build' in frontend/ directory first."
+      when: not frontend_build.stat.exists
+    
+    - name: Remove old frontend build
+      file:
+        path: "{{ docker_compose_dir }}/frontend/build"
+        state: absent
+    
+    - name: Create frontend build directory
+      file:
+        path: "{{ docker_compose_dir }}/frontend/build"
+        state: directory
+        mode: '0755'
+    
+    - name: Copy frontend build files
+      copy:
+        src: ../frontend/build/
+        dest: "{{ docker_compose_dir }}/frontend/build/"
+        mode: '0755'
+    
+    - name: Restart container to pick up new frontend
+      command: docker restart monitoring-system
+      
+    - name: Wait for container to be ready
+      wait_for:
+        port: 5000
+        host: 127.0.0.1
+        delay: 3
+        timeout: 30
+    
+    - name: Success message
+      debug:
+        msg: "Frontend deployed successfully! Visit https://kelyastream.duckdns.org"
+

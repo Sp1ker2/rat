@@ -1,0 +1,94 @@
+.device-card {
+  background: rgba(20, 20, 30, 0.9);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-left: 4px solid #444;
+}
+
+.device-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 30px rgba(102, 126, 234, 0.4);
+  border-color: rgba(102, 126, 234, 0.5);
+  background: rgba(25, 25, 35, 0.95);
+}
+
+.device-card.online {
+  border-left-color: #4caf50;
+}
+
+.device-card.online:hover {
+  box-shadow: 0 8px 30px rgba(76, 175, 80, 0.3);
+}
+
+.device-card.offline {
+  border-left-color: #f44336;
+  opacity: 0.6;
+}
+
+.device-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.device-header h3 {
+  font-size: 18px;
+  color: #ffffff;
+  margin: 0;
+  font-weight: 600;
+}
+
+.status-badge {
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-badge.online {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+  border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.status-badge.offline {
+  background: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+  border: 1px solid rgba(244, 67, 54, 0.3);
+}
+
+.device-info {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  color: #888;
+  font-weight: 500;
+}
+
+.info-value {
+  color: #e0e0e0;
+  font-weight: 600;
+}

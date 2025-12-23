@@ -1,0 +1,10 @@
+all:
+  hosts:
+    webrtc-server:
+      ansible_host: 185.115.33.46
+      ansible_user: root
+      ansible_ssh_pass: poF4S6v8nL
+      ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+      project_dir: /root/monitoring-system
+      docker_compose_dir: /root/monitoring-system
+

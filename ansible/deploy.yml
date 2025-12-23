@@ -1,0 +1,219 @@
+---
+- name: Deploy Kelya Virus via Docker
+  hosts: webrtc-server
+  become: yes
+  vars:
+    project_name: monitoring-system
+    docker_compose_dir: /root/monitoring-system
+    
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Check if Docker is installed
+      command: docker --version
+      register: docker_check
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Install Docker if not present
+      block:
+        - name: Install required packages
+          apt:
+            name:
+              - docker.io
+              - docker-compose
+              - python3-pip
+            state: present
+          when: docker_check.rc != 0
+
+        - name: Start and enable Docker service
+          systemd:
+            name: docker
+            state: started
+            enabled: yes
+          when: docker_check.rc != 0
+      when: docker_check.rc != 0
+
+    - name: Ensure Docker service is running
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+      when: docker_check.rc == 0
+
+    - name: Install Docker Python module
+      pip:
+        name: docker
+
+    - name: Create project directory
+      file:
+        path: "{{ docker_compose_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy Dockerfile
+      copy:
+        src: ../Dockerfile
+        dest: "{{ docker_compose_dir }}/Dockerfile"
+        mode: '0644'
+
+    - name: Copy docker-compose.yml
+      copy:
+        src: ../docker-compose.yml
+        dest: "{{ docker_compose_dir }}/docker-compose.yml"
+        mode: '0644'
+
+    - name: Copy requirements.txt
+      copy:
+        src: ../requirements.txt
+        dest: "{{ docker_compose_dir }}/requirements.txt"
+        mode: '0644'
+
+    - name: Remove old backend directory
+      file:
+        path: "{{ docker_compose_dir }}/backend"
+        state: absent
+    
+    - name: Copy backend directory
+      copy:
+        src: ../backend/
+        dest: "{{ docker_compose_dir }}/backend/"
+        mode: '0755'
+    
+    - name: Create empty frontend/build directory
+      file:
+        path: "{{ docker_compose_dir }}/frontend/build"
+        state: directory
+        mode: '0755'
+    
+    - name: Create placeholder index.html
+      copy:
+        content: |
+          <!DOCTYPE html>
+          <html><body><h1>Backend Running - Frontend Coming Soon</h1></body></html>
+        dest: "{{ docker_compose_dir }}/frontend/build/index.html"
+        mode: '0644'
+
+    - name: Create data directories
+      file:
+        path: "{{ docker_compose_dir }}/monitoring-data"
+        state: directory
+        mode: '0755'
+
+    - name: Stop ALL Docker containers
+      shell: docker stop $(docker ps -aq) 2>/dev/null || true
+      ignore_errors: yes
+    
+    - name: Remove old monitoring containers
+      shell: "{{ item }}"
+      loop:
+        - docker rm -f monitoring-system 2>/dev/null || true
+        - docker rm -f webrtc-python-server 2>/dev/null || true
+      ignore_errors: yes
+    
+    - name: Kill ALL processes on port 5000
+      shell: |
+        lsof -ti:5000 | xargs kill -9 2>/dev/null || true
+        fuser -k 5000/tcp 2>/dev/null || true
+        pkill -f "uvicorn" 2>/dev/null || true
+        pkill -f "python.*5000" 2>/dev/null || true
+      ignore_errors: yes
+    
+    - name: Wait for port to be released
+      pause:
+        seconds: 5
+
+    - name: Stop existing containers
+      community.docker.docker_compose_v2:
+        project_src: "{{ docker_compose_dir }}"
+        state: absent
+      ignore_errors: yes
+
+    - name: Remove old images
+      shell: docker image prune -af
+      ignore_errors: yes
+
+    - name: Build and start Docker containers
+      community.docker.docker_compose_v2:
+        project_src: "{{ docker_compose_dir }}"
+        build: always
+        state: present
+        pull: always
+        wait: yes
+        wait_timeout: 60
+        recreate: always
+        remove_orphans: yes
+
+    - name: Wait for service to be ready
+      wait_for:
+        port: 5000
+        host: 127.0.0.1
+        delay: 5
+        timeout: 30
+
+    - name: Check container status
+      command: docker ps --filter "name=monitoring-system" --format "{{ '{{' }}.Status{{ '}}' }}"
+      register: container_status
+      changed_when: false
+
+    - name: Display container status
+      debug:
+        msg: "Container status: {{ container_status.stdout }}"
+
+    - name: Show logs
+      command: docker logs monitoring-system --tail 20
+      register: container_logs
+      changed_when: false
+
+    - name: Display logs
+      debug:
+        msg: "{{ container_logs.stdout_lines }}"
+
+    - name: Check if Nginx is installed
+      command: nginx -v
+      register: nginx_check
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Update Nginx configuration for Python server
+      lineinfile:
+        path: /etc/nginx/sites-enabled/default
+        regexp: '^\s*proxy_pass\s+http://127\.0\.0\.1:8080;'
+        line: '        proxy_pass http://127.0.0.1:5000;'
+        backup: yes
+      when: nginx_check.rc == 0
+      notify: restart nginx
+
+    - name: Test Nginx configuration
+      command: nginx -t
+      register: nginx_test
+      changed_when: false
+      when: nginx_check.rc == 0
+
+    - name: Restart Nginx if configuration changed
+      systemd:
+        name: nginx
+        state: restarted
+      when: nginx_check.rc == 0 and nginx_test.rc == 0
+
+    - name: Verify service is accessible
+      uri:
+        url: http://127.0.0.1:5000/api/stats
+        method: GET
+        status_code: 200
+      register: service_check
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Display service status
+      debug:
+        msg: "Service check: {{ 'OK' if service_check.status == 200 else 'FAILED - Status: ' + service_check.status|string }}"
+
+  handlers:
+    - name: restart nginx
+      systemd:
+        name: nginx
+        state: restarted

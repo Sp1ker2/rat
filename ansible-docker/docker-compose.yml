@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  ansible-runner:
+    build:
+      context: ..
+      dockerfile: ansible-docker/Dockerfile
+    container_name: ansible-deploy
+    volumes:
+      - ../ansible:/ansible/ansible:ro
+      - ../Dockerfile:/ansible/Dockerfile:ro
+      - ../docker-compose.yml:/ansible/docker-compose.yml:ro
+      - ../requirements.txt:/ansible/requirements.txt:ro
+      - ../python-processor.py:/ansible/python-processor.py:ro
+      - ../ansible.cfg:/ansible/ansible.cfg:ro
+    network_mode: host
+    environment:
+      - ANSIBLE_HOST_KEY_CHECKING=False
+    command: ansible-playbook ansible/deploy.yml -i ansible/inventory.yml -v
+

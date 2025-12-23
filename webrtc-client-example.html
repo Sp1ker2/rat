@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC → Python Server</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
+        .status {
+            display: inline-block;
+            padding: 8px 20px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 20px;
+            margin-top: 10px;
+        }
+        .status.connected { background: #00ff88; color: #000; }
+        .content { padding: 40px; }
+        .video-container {
+            position: relative;
+            background: #000;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 30px;
+        }
+        #localVideo { width: 100%; display: block; max-height: 600px; object-fit: contain; }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .btn-success { background: #00ff88; color: #000; }
+        .btn-danger { background: #ff4757; color: white; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2em;
+            color: #667eea;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎥 WebRTC → Python Server</h1>
+            <div class="status" id="status">Отключено</div>
+        </div>
+        <div class="content">
+            <div class="video-container">
+                <video id="localVideo" autoplay muted playsinline></video>
+            </div>
+            <div class="controls">
+                <button class="btn btn-primary" id="startBtn" onclick="startStream()">▶ Начать стрим</button>
+                <button class="btn btn-success" id="connectBtn" onclick="connectWebSocket()" disabled>🔌 Подключиться</button>
+                <button class="btn btn-danger" id="stopBtn" onclick="stopStream()" disabled>⏹ Остановить</button>
+            </div>
+            <div class="stats">
+                <div class="stat-card">
+                    <h3>📈 Кадров отправлено</h3>
+                    <div class="stat-value" id="framesSent">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>💾 Размер данных</h3>
+                    <div class="stat-value" id="dataSize">0 KB</div>
+                </div>
+                <div class="stat-card">
+                    <h3>🔌 WebSocket</h3>
+                    <div class="stat-value" id="wsStatus">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let localStream = null;
+        let socket = null;
+        let framesSent = 0;
+        let totalDataSize = 0;
+        const video = document.getElementById('localVideo');
+        const statusEl = document.getElementById('status');
+        
+        async function startStream() {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 1280, height: 720 },
+                    audio: true
+                });
+                video.srcObject = localStream;
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('connectBtn').disabled = false;
+                statusEl.textContent = 'Готов к подключению';
+            } catch (error) {
+                alert('Ошибка доступа к камере: ' + error.message);
+            }
+        }
+        
+        function connectWebSocket() {
+            // Определить WebSocket URL
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host;
+            const wsUrl = `${protocol}//${host}`;
+            
+            console.log('Подключение к:', wsUrl);
+            
+            socket = io(wsUrl, {
+                transports: ['websocket', 'polling']
+            });
+            
+            socket.on('connect', () => {
+                console.log('✅ WebSocket подключен');
+                statusEl.textContent = 'Подключено';
+                statusEl.classList.add('connected');
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+                document.getElementById('wsStatus').textContent = 'ON';
+                startSendingFrames();
+            });
+            
+            socket.on('disconnect', () => {
+                console.log('🔌 WebSocket отключен');
+                statusEl.textContent = 'Отключено';
+                statusEl.classList.remove('connected');
+                document.getElementById('wsStatus').textContent = 'OFF';
+            });
+            
+            socket.on('connected', (data) => {
+                console.log('Сервер подтвердил подключение:', data);
+            });
+            
+            socket.on('frame_received', (data) => {
+                if (data.status === 'success') {
+                    console.log('Кадр обработан сервером:', data.frame_count);
+                }
+            });
+            
+            socket.on('connect_error', (error) => {
+                console.error('Ошибка подключения:', error);
+                alert('Не удалось подключиться к серверу. Проверьте что сервер запущен.');
+            });
+        }
+        
+        function startSendingFrames() {
+            if (!localStream || !socket || !socket.connected) return;
+            
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 1280;
+            canvas.height = 720;
+            
+            const sendFrame = () => {
+                if (!localStream || !socket || !socket.connected) return;
+                
+                try {
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    canvas.toBlob((blob) => {
+                        if (blob && socket.connected) {
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                                const base64 = reader.result.split(',')[1];
+                                
+                                // Отправка через WebSocket
+                                socket.emit('media_frame', {
+                                    type: 'video',
+                                    data: base64,
+                                    width: canvas.width,
+                                    height: canvas.height,
+                                    timestamp: Date.now()
+                                });
+                                
+                                framesSent++;
+                                totalDataSize += blob.size;
+                                
+                                document.getElementById('framesSent').textContent = framesSent;
+                                document.getElementById('dataSize').textContent = 
+                                    (totalDataSize / 1024).toFixed(2) + ' KB';
+                            };
+                            reader.readAsDataURL(blob);
+                        }
+                    }, 'image/jpeg', 0.8);
+                } catch (error) {
+                    console.error('Ошибка отправки кадра:', error);
+                }
+                
+                setTimeout(sendFrame, 100); // 10 FPS
+            };
+            
+            sendFrame();
+        }
+        
+        function stopStream() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+            
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+            
+            video.srcObject = null;
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('connectBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('wsStatus').textContent = '-';
+            
+            framesSent = 0;
+            totalDataSize = 0;
+            document.getElementById('framesSent').textContent = '0';
+            document.getElementById('dataSize').textContent = '0 KB';
+        }
+    </script>
+</body>
+</html>
+
