@@ -6,6 +6,7 @@ WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy backend requirements and install
@@ -18,6 +19,10 @@ COPY backend/ ./backend/
 # Copy frontend build (or create empty dir if not exists)
 COPY frontend/build/ ./frontend/build/
 
+# Copy Alembic configuration
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
+
 # Create data directories
 RUN mkdir -p /root/monitoring-data/devices /root/monitoring-data/admins
 
@@ -27,7 +32,7 @@ EXPOSE 5000
 # Environment variables
 ENV DATA_DIR=/root/monitoring-data
 ENV ADMIN_USERNAME=admin
-ENV ADMIN_PASSWORD_HASH=\$2b\$12\$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5NU7qUXx9wH4u
+ENV ADMIN_PASSWORD_HASH=\$2b\$12\$jycyShq4mYuKYm9B4AeeH.x/TCHtLo6a6RN19vt7.Y/N.FcddbHxq
 ENV JWT_SECRET=your-secret-key-change-in-production
 
 # Run application

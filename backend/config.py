@@ -36,3 +36,9 @@ MAX_FRAME_SIZE = 5 * 1024 * 1024  # 5MB
 CAMERA_FPS_LIMIT = 10
 LOCATION_UPDATE_INTERVAL = 10  # seconds
 
+# Database settings
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+asyncpg://monitoring:monitoring_password_change_in_production@localhost:5432/monitoring"
+)
+

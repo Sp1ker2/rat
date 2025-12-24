@@ -83,19 +83,54 @@
         dest: "{{ docker_compose_dir }}/backend/"
         mode: '0755'
     
-    - name: Create empty frontend/build directory
+    - name: Remove old frontend directory
       file:
-        path: "{{ docker_compose_dir }}/frontend/build"
-        state: directory
-        mode: '0755'
+        path: "{{ docker_compose_dir }}/frontend"
+        state: absent
     
-    - name: Create placeholder index.html
+    - name: Check if frontend build exists locally
+      stat:
+        path: ../frontend/build/index.html
+      register: frontend_build_check
+      delegate_to: localhost
+      changed_when: false
+    
+    - name: Copy frontend build directory
       copy:
-        content: |
-          <!DOCTYPE html>
-          <html><body><h1>Backend Running - Frontend Coming Soon</h1></body></html>
-        dest: "{{ docker_compose_dir }}/frontend/build/index.html"
+        src: ../frontend/build/
+        dest: "{{ docker_compose_dir }}/frontend/build/"
+        mode: '0755'
+      when: frontend_build_check.stat.exists
+      ignore_errors: yes
+    
+    - name: Create placeholder frontend if build doesn't exist
+      block:
+        - name: Create frontend/build directory
+          file:
+            path: "{{ docker_compose_dir }}/frontend/build"
+            state: directory
+            mode: '0755'
+        
+        - name: Create placeholder index.html
+          copy:
+            content: |
+              <!DOCTYPE html>
+              <html><body><h1>Kelya Virus Backend Running</h1><p>Frontend will be deployed separately</p></body></html>
+            dest: "{{ docker_compose_dir }}/frontend/build/index.html"
+            mode: '0644'
+      when: not frontend_build_check.stat.exists
+
+    - name: Copy alembic.ini
+      copy:
+        src: ../alembic.ini
+        dest: "{{ docker_compose_dir }}/alembic.ini"
         mode: '0644'
+
+    - name: Copy alembic directory
+      copy:
+        src: ../alembic/
+        dest: "{{ docker_compose_dir }}/alembic/"
+        mode: preserve
 
     - name: Create data directories
       file:
@@ -146,6 +181,23 @@
         wait_timeout: 60
         recreate: always
         remove_orphans: yes
+
+    - name: Wait for PostgreSQL to be ready
+      wait_for:
+        port: 5432
+        host: 127.0.0.1
+        delay: 10
+        timeout: 60
+
+    - name: Run database migrations
+      shell: docker exec monitoring-system python -m alembic upgrade head
+      ignore_errors: yes
+      register: migration_result
+
+    - name: Display migration result
+      debug:
+        msg: "{{ migration_result.stdout }}"
+      when: migration_result.rc == 0
 
     - name: Wait for service to be ready
       wait_for:

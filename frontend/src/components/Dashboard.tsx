@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DeviceInfo } from '../types/device';
 import { DeviceCard } from './DeviceCard';
@@ -8,10 +8,27 @@ import '../styles/Dashboard.css';
 interface DashboardProps {
   devices: DeviceInfo[];
   onLogout: () => void;
+  onDeviceUpdate?: () => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ devices, onLogout }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ devices, onLogout, onDeviceUpdate }) => {
   const navigate = useNavigate();
+  const [localDevices, setLocalDevices] = useState(devices);
+
+  React.useEffect(() => {
+    setLocalDevices(devices);
+  }, [devices]);
+
+  const handleDeviceRename = (deviceId: string, newName: string) => {
+    setLocalDevices(prevDevices =>
+      prevDevices.map(device =>
+        device.id === deviceId ? { ...device, name: newName } : device
+      )
+    );
+    if (onDeviceUpdate) {
+      onDeviceUpdate();
+    }
+  };
 
   const handleLogout = async () => {
     const token = getToken();
@@ -30,8 +47,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ devices, onLogout }) => {
     navigate(`/device/${deviceId}`);
   };
 
-  const onlineDevices = devices.filter(d => d.is_online);
-  const offlineDevices = devices.filter(d => !d.is_online);
+  const onlineDevices = localDevices.filter(d => d.is_online);
+  const offlineDevices = localDevices.filter(d => !d.is_online);
 
   return (
     <div className="dashboard">
@@ -42,7 +59,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ devices, onLogout }) => {
 
       <div className="dashboard-stats">
         <div className="stat-card">
-          <div className="stat-value">{devices.length}</div>
+          <div className="stat-value">{localDevices.length}</div>
           <div className="stat-label">Total Devices</div>
         </div>
         <div className="stat-card online">
@@ -64,6 +81,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ devices, onLogout }) => {
                 key={device.id} 
                 device={device} 
                 onClick={() => handleDeviceClick(device.id)}
+                onRename={handleDeviceRename}
               />
             ))}
           </div>
@@ -79,13 +97,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ devices, onLogout }) => {
                 key={device.id} 
                 device={device} 
                 onClick={() => handleDeviceClick(device.id)}
+                onRename={handleDeviceRename}
               />
             ))}
           </div>
         </div>
       )}
 
-      {devices.length === 0 && (
+      {localDevices.length === 0 && (
         <div className="no-devices">
           <h2>No devices connected</h2>
           <p>Waiting for devices to connect...</p>

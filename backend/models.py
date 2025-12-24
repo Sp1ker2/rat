@@ -65,3 +65,32 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+
+class DeviceRegistration(BaseModel):
+    """Device registration request"""
+    name: str
+    imei: Optional[str] = None
+    model: Optional[str] = None
+    manufacturer: Optional[str] = None
+    android_version: Optional[str] = None
+    sdk: Optional[int] = None
+
+
+class DeviceRegistrationResponse(BaseModel):
+    """Device registration response"""
+    device_id: str
+    name: str
+    token: str
+
+
+class DeviceTokenResponse(BaseModel):
+    """Device token response"""
+    device_id: str
+    token: str
+    connection_url: str
+
+
+class RenameDeviceRequest(BaseModel):
+    """Rename device request"""
+    name: str
+

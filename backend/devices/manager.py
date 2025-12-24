@@ -2,7 +2,8 @@
 from datetime import datetime
 from typing import Dict, List, Optional
 from backend.models import DeviceSession, DeviceInfo
-from backend.storage.files import storage
+from backend.storage.database import storage
+from backend.database.models import Device
 
 
 class SessionManager:
@@ -14,17 +15,43 @@ class SessionManager:
     async def register_device(self, device_info: DeviceInfo) -> DeviceSession:
         """Register a new device or update existing"""
         
-        # Create device folder if needed
-        await storage.create_device_folder(device_info.id)
+        # Check if device exists in database
+        db_device = await storage.get_device(device_info.id)
         
-        # Create or update session
+        if db_device:
+            # Update existing device
+            await storage.update_device(
+                device_info.id,
+                name=device_info.name,
+                imei=device_info.imei,
+                model=device_info.model,
+                manufacturer=device_info.manufacturer,
+                android_version=device_info.android_version,
+                sdk=device_info.sdk
+            )
+        else:
+            # Device should be pre-registered with token
+            # If not found, create it (for backward compatibility)
+            from backend.devices.registration import generate_device_token
+            await storage.create_device(
+                device_id=device_info.id,
+                name=device_info.name,
+                token=generate_device_token(),
+                imei=device_info.imei,
+                model=device_info.model,
+                manufacturer=device_info.manufacturer,
+                android_version=device_info.android_version,
+                sdk=device_info.sdk
+            )
+        
+        # Create or update in-memory session
         now = datetime.utcnow()
         
         if device_info.id in self.sessions:
             session = self.sessions[device_info.id]
             session.last_activity = now
             session.is_online = True
-            session.device_name = device_info.name  # Update name if changed
+            session.device_name = device_info.name
         else:
             session = DeviceSession(
                 device_id=device_info.id,
@@ -38,8 +65,7 @@ class SessionManager:
             )
             self.sessions[device_info.id] = session
         
-        # Save device info
-        await storage.save_device_info(device_info.id, device_info.dict())
+        # Log event
         await storage.log_device_event(device_info.id, "connected", device_info.dict())
         
         return session
@@ -78,7 +104,13 @@ class SessionManager:
     async def save_snapshot(self, device_id: str, data_type: str, data: Dict):
         """Save data snapshot"""
         if data_type == "location":
-            await storage.save_location(device_id, data)
+            await storage.save_location(
+                device_id,
+                data.get("lat"),
+                data.get("lon"),
+                data.get("accuracy"),
+                data.get("timestamp", int(datetime.utcnow().timestamp() * 1000))
+            )
         
         await storage.log_device_event(device_id, f"{data_type}_update", data)
 

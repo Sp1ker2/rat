@@ -118,3 +118,4 @@ const val SERVER_URL = "wss://kelyastream.duckdns.org/ws/device"
 
 **Подробная инструкция:** Смотри `ANDROID-DEVELOPER-GUIDE.md`
 
+

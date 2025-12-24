@@ -1,13 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { DeviceInfo } from '../types/device';
+import { renameDevice } from '../api/devices';
+import { getToken } from '../api/auth';
 import '../styles/DeviceCard.css';
 
 interface DeviceCardProps {
   device: DeviceInfo;
   onClick: () => void;
+  onRename?: (deviceId: string, newName: string) => void;
 }
 
-export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onClick }) => {
+export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onClick, onRename }) => {
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [newName, setNewName] = useState(device.name);
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleString();
@@ -24,13 +30,76 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onClick }) => {
     return `${Math.floor(seconds / 86400)}d ago`;
   };
 
+  const handleRename = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!newName.trim()) return;
+    
+    const token = getToken();
+    if (!token) return;
+    
+    try {
+      await renameDevice(token, device.id, newName.trim());
+      if (onRename) {
+        onRename(device.id, newName.trim());
+      }
+      setIsRenaming(false);
+    } catch (error) {
+      console.error('Error renaming device:', error);
+      alert('Failed to rename device');
+    }
+  };
+
   return (
     <div 
       className={`device-card ${device.is_online ? 'online' : 'offline'}`}
       onClick={onClick}
     >
       <div className="device-header">
-        <h3>{device.name}</h3>
+        {isRenaming ? (
+          <div className="device-name-edit">
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              className="device-name-input"
+              autoFocus
+            />
+            <button
+              onClick={handleRename}
+              className="device-name-save"
+              title="Save"
+            >
+              ✓
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsRenaming(false);
+                setNewName(device.name);
+              }}
+              className="device-name-cancel"
+              title="Cancel"
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <div className="device-name-container">
+            <h3>{device.name}</h3>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsRenaming(true);
+                setNewName(device.name);
+              }}
+              className="device-rename-btn"
+              title="Rename device"
+            >
+              ✏️
+            </button>
+          </div>
+        )}
         <span className={`status-badge ${device.is_online ? 'online' : 'offline'}`}>
           {device.is_online ? 'Online' : 'Offline'}
         </span>

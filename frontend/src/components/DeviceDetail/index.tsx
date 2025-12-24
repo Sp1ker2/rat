@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getDevice } from '../../api/devices';
+import { getDevice, renameDevice } from '../../api/devices';
 import { getToken } from '../../api/auth';
 import { DeviceInfo } from '../../types/device';
 import { CameraView } from './CameraView';
@@ -14,6 +14,8 @@ export const DeviceDetail: React.FC = () => {
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [activeTab, setActiveTab] = useState('camera');
   const [loading, setLoading] = useState(true);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [newName, setNewName] = useState('');
 
   useEffect(() => {
     const loadDevice = async () => {
@@ -55,7 +57,60 @@ export const DeviceDetail: React.FC = () => {
           ← Back
         </button>
         <div className="device-title">
-          <h1>{device.name}</h1>
+          {isRenaming ? (
+            <div className="rename-container">
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className="rename-input"
+                placeholder="Enter new name"
+                autoFocus
+              />
+              <button
+                onClick={async () => {
+                  const token = getToken();
+                  if (!token || !deviceId || !newName.trim()) return;
+                  
+                  try {
+                    await renameDevice(token, deviceId, newName.trim());
+                    setDevice({ ...device, name: newName.trim() });
+                    setIsRenaming(false);
+                    setNewName('');
+                  } catch (error) {
+                    console.error('Error renaming device:', error);
+                    alert('Failed to rename device');
+                  }
+                }}
+                className="rename-save-btn"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => {
+                  setIsRenaming(false);
+                  setNewName('');
+                }}
+                className="rename-cancel-btn"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="device-name-container">
+              <h1>{device.name}</h1>
+              <button
+                onClick={() => {
+                  setNewName(device.name);
+                  setIsRenaming(true);
+                }}
+                className="rename-btn"
+                title="Rename device"
+              >
+                ✏️
+              </button>
+            </div>
+          )}
           <span className={`status-badge ${device.is_online ? 'online' : 'offline'}`}>
             {device.is_online ? 'Online' : 'Offline'}
           </span>

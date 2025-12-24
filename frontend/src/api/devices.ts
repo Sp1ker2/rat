@@ -34,3 +34,7 @@ export const getLocationHistory = async (token: string, deviceId: string): Promi
   return response.data;
 };
 
+export const renameDevice = async (token: string, deviceId: string, newName: string): Promise<void> => {
+  await axios.patch(`${API_URL}/api/devices/${deviceId}/rename`, { name: newName }, getHeaders(token));
+};
+
